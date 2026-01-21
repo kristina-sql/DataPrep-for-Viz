@@ -1,4 +1,13 @@
-.env
+# macOS
+.DS_Store
+
+# Python
 __pycache__/
-.venv/
 *.pyc
+
+# Environment & secrets
+.env
+
+# Local data (personal / generated)
+data/
+*.csv
