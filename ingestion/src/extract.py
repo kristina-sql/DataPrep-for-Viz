@@ -1,99 +1,162 @@
 import os
-import requests
-import pandas as pd
-from dotenv import load_dotenv
-from datetime import datetime
+import json
 import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+import requests
+from dotenv import load_dotenv
 
-load_dotenv()
 
-# Load credentials from .env
-CLIENT_ID = os.getenv("STRAVA_CLIENT_ID")
-CLIENT_SECRET = os.getenv("STRAVA_CLIENT_SECRET")
-ACCESS_TOKEN = os.getenv("STRAVA_API_KEY")  
-REFRESH_TOKEN = os.getenv("STRAVA_REFRESH_TOKEN")
-EXPIRES_AT = int(os.getenv("STRAVA_TOKEN_EXPIRES_AT", 0))  
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-def refresh_token_if_needed():
-    global ACCESS_TOKEN, REFRESH_TOKEN, EXPIRES_AT
-    if time.time() >= EXPIRES_AT:
-        print("Access token expired, refreshing...")
-        response = requests.post(
-            "https://www.strava.com/oauth/token",
-            data={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
-                "grant_type": "refresh_token",
-                "refresh_token": REFRESH_TOKEN
-            }
+
+def load_env() -> Dict[str, str]:
+    load_dotenv()
+    required = [
+        "STRAVA_CLIENT_ID",
+        "STRAVA_CLIENT_SECRET",
+        "STRAVA_REFRESH_TOKEN",
+    ]
+    missing = [k for k in required if not os.getenv(k)]
+    if missing:
+        raise RuntimeError(f"Missing env vars: {', '.join(missing)}")
+
+    # Access token can be empty initially; we can refresh using refresh_token.
+    return {
+        "client_id": os.getenv("STRAVA_CLIENT_ID", ""),
+        "client_secret": os.getenv("STRAVA_CLIENT_SECRET", ""),
+        "refresh_token": os.getenv("STRAVA_REFRESH_TOKEN", ""),
+        "access_token": os.getenv("STRAVA_API_KEY", ""),  # optional
+        "expires_at": os.getenv("STRAVA_TOKEN_EXPIRES_AT", "0"),
+    }
+
+
+def refresh_access_token(
+    client_id: str,
+    client_secret: str,
+    refresh_token: str,
+) -> Dict[str, Any]:
+    """Always refreshes token using refresh_token. Returns token payload."""
+    resp = requests.post(
+        "https://www.strava.com/oauth/token",
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": refresh_token,
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_valid_access_token(env: Dict[str, str]) -> Dict[str, Any]:
+    """
+    If token is missing/expired -> refresh.
+    We DO NOT write back to .env automatically (safer).
+    """
+    try:
+        expires_at = int(env.get("expires_at") or "0")
+    except ValueError:
+        expires_at = 0
+
+    access_token = env.get("access_token") or ""
+    now = int(time.time())
+
+    if (not access_token) or (now >= expires_at):
+        print("Access token missing/expired -> refreshing via refresh token...")
+        token_data = refresh_access_token(
+            env["client_id"], env["client_secret"], env["refresh_token"]
         )
-        data = response.json()
-        ACCESS_TOKEN = data["access_token"]
-        REFRESH_TOKEN = data["refresh_token"]
-        EXPIRES_AT = data["expires_at"]
+        # Print instructions (safer than editing .env automatically)
+        print("\nUpdate your .env with these new values:")
+        print(f"STRAVA_API_KEY={token_data.get('access_token')}")
+        print(f"STRAVA_REFRESH_TOKEN={token_data.get('refresh_token')}")
+        print(f"STRAVA_TOKEN_EXPIRES_AT={token_data.get('expires_at')}\n")
+        return token_data
 
-        # Update .env file with new tokens
-        env_path = ".env"
-        lines = []
-        if os.path.exists(env_path):
-            with open(env_path, "r") as f:
-                lines = f.readlines()
-        with open(env_path, "w") as f:
-            updated_keys = ["STRAVA_API_KEY", "STRAVA_REFRESH_TOKEN", "STRAVA_TOKEN_EXPIRES_AT"]
-            for key in updated_keys:
-                # Remove old lines if they exist
-                lines = [line for line in lines if not line.startswith(key + "=")]
-            # Append updated values
-            lines.append(f"STRAVA_API_KEY={ACCESS_TOKEN}\n")
-            lines.append(f"STRAVA_REFRESH_TOKEN={REFRESH_TOKEN}\n")
-            lines.append(f"STRAVA_TOKEN_EXPIRES_AT={EXPIRES_AT}\n")
-            f.writelines(lines)
-        print("Tokens refreshed and .env updated!")
+    # token still valid; return in same shape as refresh payload
+    return {
+        "access_token": access_token,
+        "refresh_token": env["refresh_token"],
+        "expires_at": expires_at,
+    }
 
-# Refresh token if needed before API calls
-refresh_token_if_needed()
 
-# Prepare headers for API requests
-headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+def fetch_activities(access_token: str, per_page: int = 200) -> List[Dict[str, Any]]:
+    """
+    Fetches ALL activities available via paging.
+    Raw ingestion best practice: do not filter business logic here.
+    """
+    url = "https://www.strava.com/api/v3/athlete/activities"
+    headers = {"Authorization": f"Bearer {access_token}"}
 
-# Fetch last 200 activities (page 1 initially)
-url = "https://www.strava.com/api/v3/athlete/activities"
-params = {"per_page": 200, "page": 1}
+    all_activities: List[Dict[str, Any]] = []
+    page = 1
 
-all_activities = []
-while True:
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code != 200:
-        raise Exception(f"Error: {response.status_code}, {response.text}")
-    
-    data = response.json()
-    if not data:
-        break
-    
-    all_activities.extend(data)
-    params["page"] += 1
+    while True:
+        params = {"per_page": per_page, "page": page}
+        resp = requests.get(url, headers=headers, params=params, timeout=30)
 
-# Filter only virtual rides from 2025 & 2026
-rides_summary = []
-for ride in all_activities:
-    ride_date = datetime.strptime(ride["start_date"], "%Y-%m-%dT%H:%M:%SZ")
-    if ride.get("sport_type") == "VirtualRide" and ride_date.year in [2025, 2026]:
-        rides_summary.append({
-            "ride_id": ride["id"],
-            "name": ride["name"],
-            "start_date": ride["start_date"],
-            "distance_km": ride["distance"] / 1000,
-            "moving_time_min": ride["moving_time"] / 60,
-            "average_speed_kmh": ride["average_speed"] * 3.6,
-            "elevation_m": ride["total_elevation_gain"],
-            "average_power": ride.get("average_watts"),
-            "max_power": ride.get("max_watts"),
-            "average_hr": ride.get("average_heartrate"),
-            "max_hr": ride.get("max_heartrate"),
-            "kilojoules": ride.get("kilojoules"),
-            "sport_type": ride.get("sport_type")
-        })
+        # Helpful error detail
+        if resp.status_code != 200:
+            raise RuntimeError(f"Strava API error {resp.status_code}: {resp.text}")
 
-df_summary = pd.DataFrame(rides_summary)
-df_summary.to_csv("strava_virtual_summary.csv", index=False)
-print("Virtual rides CSV created!")
+        data = resp.json()
+        if not data:
+            break
+
+        all_activities.extend(data)
+        page += 1
+
+    return all_activities
+
+
+def save_raw_json(activities: List[Dict[str, Any]], out_dir: Path) -> Path:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / f"strava_activities_raw_{_utc_now_iso().replace(':','')}.json"
+    payload = {
+        "extracted_at_utc": _utc_now_iso(),
+        "record_count": len(activities),
+        "activities": activities,
+    }
+    out_path.write_text(json.dumps(payload, ensure_ascii=False))
+    return out_path
+
+
+def save_raw_csv_flat(activities: List[Dict[str, Any]], out_dir: Path) -> Path:
+    """
+    Optional: a quick flat CSV with the raw keys Strava returns (not derived metrics).
+    This is still 'raw-ish' but JSON is the better raw format.
+    """
+    import pandas as pd  # local import to keep top clean
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "strava_activities_raw_flat.csv"
+    df = pd.json_normalize(activities, sep="__")
+    df.to_csv(out_path, index=False)
+    return out_path
+
+
+def main() -> None:
+    env = load_env()
+    token_data = get_valid_access_token(env)
+
+    activities = fetch_activities(token_data["access_token"], per_page=200)
+    print(f"Fetched {len(activities)} activities.")
+
+    # Raw outputs (recommended)
+    out_dir = Path("data") / "raw"
+    json_path = save_raw_json(activities, out_dir)
+    print(f"Saved raw JSON: {json_path}")
+
+    # Optional convenience export (still raw-ish)
+    csv_path = save_raw_csv_flat(activities, out_dir)
+    print(f"Saved raw flat CSV: {csv_path}")
+
+
+if __name__ == "__main__":
+    main()
