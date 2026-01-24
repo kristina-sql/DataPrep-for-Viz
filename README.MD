@@ -14,12 +14,13 @@ While the current implementation focuses on **virtual cycling activities**, the 
 - Other cycling activity types
 - Running and workouts
 - Broader fitness and training analytics
+- Statistics for community -> more athlets
 
 ---
 
 ## Project Vision
 
-The long-term vision is to build a small but realistic analytics platform that follows modern data practices:
+The long-term vision is to build realistic analytics platform that follows modern data practices:
 - API-based data ingestion
 - Structured data layers (raw, staging, intermediate, marts)
 - Star-schema data modeling (dim and fact tables)
@@ -54,7 +55,7 @@ This repository also serves as a space to **experiment, learn, and exchange idea
 
 ## Data Model
 
-The analytics layer is built using a dimensional (star-schema) model centered on cycling activities, with multiple supporting fact tables for power and heart-rate analytics.
+The analytics layer is built using a dimensional (star-schema) model centered on strava activities, with multiple supporting fact tables for power and heart-rate analytics.
 
 ![Cycling Analytics Data Model](assets/images/data_model.png)
 
@@ -116,15 +117,16 @@ https://dbdiagram.io/d/strava-data-platform-6971e618bd82f5fce242d2ec
 | 2026-01-21 | Looker connection tested with MVP dashboard |
 | 2026-01-21 | GitHub Actions implemented and validated |
 | 2026-01-22 | Dimensional data model designed and physical schema implementation started |
+| 2026-01-24 | Finalized fact & dim tables |
 
 ### Planned Next Steps
 
 | Priority | Task | Deadline
 |--------|------|--------|
-| High | Finalize mart-layer fact and dimension tables | 2026-01-23
-| High | Implement full star schema in dbt | 2026-01-23
 | Medium | Build Looker dashboard | 2026-01-24
 | Low | Design Illustration of Architecture | 2026-01-24
+| High | To add schema.yml & dbt build into GitHub Actions for Data Validation purposes | 2026-01-24
+| Medium | Generate dbt docs and attach data lineage | 2026-01-25
 
 
 ## Glossary (for learning purposes)
@@ -141,3 +143,4 @@ https://dbdiagram.io/d/strava-data-platform-6971e618bd82f5fce242d2ec
 | **SCD Type 2 (SCD2)** | Slowly Changing Dimension approach that preserves historical changes by creating new rows instead of overwriting data. |
 | **Staging Layer** | Cleaned and lightly transformed data layer that mirrors source systems (`stg_*` models in dbt). |
 | **Mart Layer** | Analytics-ready layer containing fact and dimension tables for reporting and BI tools. |
+| **DWH** | (Data Warehouse) — a centralized database that stores cleaned and structured data from multiple sources for analytics and reporting. |
