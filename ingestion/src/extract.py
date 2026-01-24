@@ -1,3 +1,4 @@
+# AI wirtten code, need to refine it and comment what is not understandable
 import os
 import json
 import time
@@ -56,7 +57,6 @@ def refresh_access_token(
 def get_valid_access_token(env: Dict[str, str]) -> Dict[str, Any]:
     """
     If token is missing/expired -> refresh.
-    We DO NOT write back to .env automatically (safer).
     """
     try:
         expires_at = int(env.get("expires_at") or "0")
