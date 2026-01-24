@@ -1,3 +1,4 @@
+# AI wirtten code, need to refine it and comment what is not understandable
 import json
 import os
 from pathlib import Path

@@ -6,8 +6,10 @@
 with source as (
     select * 
     from {{ ref('stg_strava_activities') }}
+
+    --strava IDs are sequential
     {% if is_incremental() %}
-    where start_date_utc > (select max(created_at) from {{ this }})
+    where activity_id > (select max(activity_id) from {{ this }})
     {% endif %}
 ),
 
