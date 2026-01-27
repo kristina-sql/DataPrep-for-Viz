@@ -110,7 +110,7 @@ End-to-end analytics pipeline analyzing Virtual (Zwift) cycling data to track tr
    - Recent activity breakdown with Intensity Factor
    - **Key Insight**: Watts/BPM stable but efficiency declining—need Z2 focus
 
-![Looker_Overview](https://github.com/kristina-sql/strava-analytics-platform/blob/3492b8c9c2662f88a8dc99a3d7ea4706d8b67e54/assets/images/looker_performance.png)
+![Looker_Overview](https://github.com/kristina-sql/strava-analytics-platform/blob/a7c405c7b357c82bd2c443db4b2d017b666e88ed/assets/images/fixed_looker.png)
 
 
 3. **Zone Distribution** (Future plan)
