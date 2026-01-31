@@ -3,25 +3,27 @@ name: strava-elt-pipeline
 on:
   workflow_dispatch: {}
   schedule:
-    - cron: "0 20 * * *" # daily 05:00 UTC (change later)
+    # 20:00 UTC daily 22:00 Riga time 
+    - cron: "0 20 * * *"
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
 
     env:
-      # Strava
+      # Strava (client app creds)
       STRAVA_CLIENT_ID: ${{ secrets.STRAVA_CLIENT_ID }}
       STRAVA_CLIENT_SECRET: ${{ secrets.STRAVA_CLIENT_SECRET }}
-      STRAVA_REFRESH_TOKEN: ${{ secrets.STRAVA_REFRESH_TOKEN }}
 
-      # Neon (dbt + loader)
+      # Neon connection
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # dbt profile inputs (if you prefer building dbt profile from parts)
       NEON_HOST: ${{ secrets.NEON_HOST }}
       NEON_DB: ${{ secrets.NEON_DB }}
       NEON_USER: ${{ secrets.NEON_USER }}
       NEON_PASSWORD: ${{ secrets.NEON_PASSWORD }}
       NEON_PORT: ${{ secrets.NEON_PORT }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
     steps:
       - name: Checkout repo
@@ -53,23 +55,17 @@ jobs:
                 host: ${NEON_HOST}
                 user: ${NEON_USER}
                 password: ${NEON_PASSWORD}
-                port: 5432
+                port: ${NEON_PORT}
                 dbname: ${NEON_DB}
                 schema: analytics
                 threads: 4
                 sslmode: require
           YAML
 
-      - name: Run ingestion (creates raw snapshot files on runner)
+      - name: Run ingestion (Strava -> Neon raw tables)
         run: |
           python ingestion/src/main.py
 
-      - name: Load raw snapshot into Neon
-        run: |
-          # Build DATABASE_URL for your load_to_neon.py
-          export DATABASE_URL="postgresql://${NEON_USER}:${NEON_PASSWORD}@${NEON_HOST}:${NEON_PORT}/${NEON_DB}?sslmode=require"
-          python ingestion/src/load_to_neon.py
-    
       - name: Run dbt (staging only)
         working-directory: transformations
         run: |
@@ -79,15 +75,14 @@ jobs:
           echo "packages.yml:"; ls -la packages.yml
           echo "---- packages.yml content ----"
           cat packages.yml
-      
+
           echo "Running deps..."
           dbt deps --debug
-      
+
           echo "After deps, list dbt_packages:"
           ls -la
           ls -la dbt_packages || true
           ls -la dbt_packages/dbt_utils || true
-      
+
           dbt debug
           dbt build --select tag:staging+
-
