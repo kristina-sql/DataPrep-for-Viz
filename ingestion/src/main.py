@@ -1,5 +1,5 @@
-from extract_to_neon import main as extract_and_load
+from extract import main as extract
 
 
 if __name__ == "__main__":
-    extract_and_load()
+    extract()
